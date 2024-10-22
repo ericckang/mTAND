@@ -52,8 +52,8 @@ def introduce_missingness(dataset, missing_rate):
         present_indices = torch.nonzero(mask, as_tuple=False)
         # Randomly select indices to set as missing
         missing_indices = present_indices[torch.randperm(len(present_indices))[:num_missing]]
-        # Set missing values
-        vals[missing_indices[:, 0], missing_indices[:, 1]] = 0.0  # or float('nan')
+        # Set missing values to NaN
+        vals[missing_indices[:, 0], missing_indices[:, 1]] = float('nan')
         mask[missing_indices[:, 0], missing_indices[:, 1]] = 0
         new_dataset.append((record_id, tt, vals, mask, labels))
     print(f"Introduced missingness: {missing_rate*100}% missing values.")
@@ -91,10 +91,10 @@ def mean_squared_error(orig, pred, mask):
 def normalize_masked_data(data, mask, att_min, att_max):
     att_max[att_max == 0.] = 1.
     data_norm = (data - att_min) / att_max
-    # Handle NaNs
-    data_norm = torch.nan_to_num(data_norm, nan=0.0)
-    # Set masked out elements back to zero
-    data_norm[mask == 0] = 0
+    # Do not replace NaNs with zeros
+    # data_norm = torch.nan_to_num(data_norm, nan=0.0)
+    # Instead, keep NaNs or replace them with a distinct value
+    data_norm[mask == 0] = float('nan')  # or data_norm[mask == 0] = -1e9
     return data_norm, att_min, att_max
 
 
@@ -381,6 +381,8 @@ def variable_time_collate_fn(batch, device=torch.device("cpu"), classify=False, 
     if not activity:
         enc_combined_vals, _, _ = normalize_masked_data(enc_combined_vals, enc_combined_mask,
                                                         att_min=data_min, att_max=data_max)
+
+    enc_combined_vals = torch.nan_to_num(enc_combined_vals, nan=0.0)
 
     if torch.max(enc_combined_tt) != 0.:
         enc_combined_tt = enc_combined_tt / torch.max(enc_combined_tt)

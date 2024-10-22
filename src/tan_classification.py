@@ -1,6 +1,6 @@
-# tan_classification.py
 # pylint: disable=E1101, E0401, E1102, W0621, W0221
 
+import copy
 import argparse
 import numpy as np
 import torch
@@ -190,14 +190,47 @@ if __name__ == '__main__':
 
     # After loading data_obj and train_data
     train_data = data_obj["train_data"]
-
+    #print(train_data)
+    # Deep copy
+    train_data_original = copy.deepcopy(train_data)
+    #print(train_data_original)
     # Compute data_min and data_max from train_data
-    data_min, data_max = utils.get_data_min_max(train_data, device)
+    data_min, data_max = utils.get_data_min_max(train_data_original, device)
+
+    # Preprocess the complete data
+    complete_train_data_combined, complete_labels = utils.variable_time_collate_fn(
+        train_data_original, device, classify=args.classif, data_min=data_min, data_max=data_max)
+    
+    # Save the original data to a text file
+    print("Saving original data to 'original_data.txt'...")
+    with open('original_data.txt', 'w') as f:
+        for idx, (record_id, tt, vals, mask, labels) in enumerate(train_data_original):
+            f.write(f'Record ID: {record_id}\n')
+            f.write(f'Time Steps: {tt.cpu().numpy()}\n')
+            f.write(f'Values:\n{vals.cpu().numpy()}\n')
+            f.write(f'Mask:\n{mask.cpu().numpy()}\n')
+            f.write(f'Labels: {labels.cpu().numpy()}\n')
+            f.write('\n')
+
+    # Save the preprocessed complete data
+    complete_data_array = complete_train_data_combined.cpu().numpy()
+    np.save('complete_data.npy', complete_data_array)
+    np.savetxt('complete_data.txt', complete_data_array.reshape(-1, complete_data_array.shape[-1]))
+
+    #END
+    # Create TensorDataset and DataLoader for complete data
+    complete_train_dataset = TensorDataset(complete_train_data_combined, complete_labels.long().squeeze())
+    complete_train_dataloader = DataLoader(
+        complete_train_dataset,
+        batch_size=args.batch_size,
+        shuffle=False
+    )
 
     # Extract representations from the complete dataset
     print("Extracting representations from complete data...")
     rec.eval()
-    rep_complete = extract_representations(rec, train_loader, args, device)
+    classifier.eval()
+    rep_complete = extract_representations(rec, complete_train_dataloader, args, device)
 
     # Introduce missingness and compute similarities
     missing_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
@@ -206,10 +239,29 @@ if __name__ == '__main__':
     for rate in missing_rates:
         print(f"Processing missingness rate: {rate}")
         # Introduce missingness
-        missing_train_data = utils.introduce_missingness(train_data, rate)
+        missing_train_data = utils.introduce_missingness(copy.deepcopy(train_data_original), rate)
+
+
+        # Save the missing data to a text file
+        print(f"Saving missing data with {int(rate*100)}% missingness to 'missing_data_{int(rate*100)}.txt'...")
+        with open(f'missing_data_{int(rate*100)}.txt', 'w') as f:
+            for idx, (record_id, tt, vals, mask, labels) in enumerate(missing_train_data):
+                f.write(f'Record ID: {record_id}\n')
+                f.write(f'Time Steps: {tt.cpu().numpy()}\n')
+                f.write(f'Values:\n{vals.cpu().numpy()}\n')
+                f.write(f'Mask:\n{mask.cpu().numpy()}\n')
+                f.write(f'Labels: {labels.cpu().numpy()}\n')
+                f.write('\n')
         # Create dataloader for missing data
         missing_train_data_combined, missing_labels = utils.variable_time_collate_fn(
             missing_train_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
+
+         # Save the combined missing data
+        missing_data_array = missing_train_data_combined.cpu().numpy()
+        np.save(f'missing_data_combined_{int(rate*100)}.npy', missing_data_array)
+        np.savetxt(f'missing_data_combined_{int(rate*100)}.txt', missing_data_array.reshape(-1, missing_data_array.shape[-1]))
+
+        #END
         missing_train_dataloader = DataLoader(
             TensorDataset(missing_train_data_combined, missing_labels.long().squeeze()),
             batch_size=args.batch_size, shuffle=False)
