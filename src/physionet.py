@@ -44,7 +44,6 @@ class PhysioNet(object):
 
   urls = [
     'https://physionet.org/files/challenge-2012/1.0.0/set-a.tar.gz?download',
-    'https://physionet.org/files/challenge-2012/1.0.0/set-b.tar.gz?download',
   ]
 
   outcome_urls = ['https://physionet.org/files/challenge-2012/1.0.0/Outcomes-a.txt']
@@ -72,15 +71,12 @@ class PhysioNet(object):
 
     if download:
       self.download()
+    
+    data_file = self.training_file  # Always use Set A
 
     if not self._check_exists():
       raise RuntimeError('Dataset not found. You can use download=True to download it')
 
-    if self.train:
-      data_file = self.training_file
-    else:
-      data_file = self.test_file
-    
     if self.device == 'cpu':
       self.data = torch.load(os.path.join(self.processed_folder, data_file), map_location='cpu')
       self.labels = torch.load(os.path.join(self.processed_folder, self.label_file), map_location='cpu')
@@ -90,7 +86,6 @@ class PhysioNet(object):
 
     if n_samples is not None:
       self.data = self.data[:n_samples]
-      self.labels = self.labels[:n_samples]
 
 
   def download(self):
@@ -213,10 +208,6 @@ class PhysioNet(object):
   @property
   def training_file(self):
     return 'set-a_{}.pt'.format(self.quantization)
-
-  @property
-  def test_file(self):
-    return 'set-b_{}.pt'.format(self.quantization)
 
   @property
   def label_file(self):

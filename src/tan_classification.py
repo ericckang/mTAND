@@ -14,6 +14,7 @@ import models
 import utils
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--niters', type=int, default=2000)
@@ -58,7 +59,7 @@ def extract_representations(model, data_loader, args, device):
     model.eval()
     representations_list = []
     with torch.no_grad():
-        for batch in data_loader:
+        for batch_idx, batch in enumerate(data_loader):
             if isinstance(batch, list) or isinstance(batch, tuple):
                 data = batch[0]
             else:
@@ -69,24 +70,24 @@ def extract_representations(model, data_loader, args, device):
                 data[:, :, args.input_dim:2 * args.input_dim],
                 data[:, :, -1],
             )
+            # Optionally, print observed_data and observed_mask samples
+            if batch_idx == 0:
+                print("Observed Data Sample (batch 0):", observed_data[0])
+                print("Observed Mask Sample (batch 0):", observed_mask[0])
             _, _, representations = model(torch.cat((observed_data, observed_mask), 2), observed_tp)
             representations_list.append(representations.cpu())
     representations = torch.cat(representations_list, dim=0)
     return representations
 
 
+
 def compute_similarity(rep_complete, rep_missing):
-    """
-    Computes cosine similarity and MSE between complete and missing representations.
-    """
-    # Average over time steps
-    rep_complete_avg = torch.mean(rep_complete, dim=1).numpy()
-    rep_missing_avg = torch.mean(rep_missing, dim=1).numpy()
-    # Compute cosine similarity
-    cos_sim = np.diag(cosine_similarity(rep_complete_avg, rep_missing_avg))
-    # Compute MSE
-    mse = np.mean((rep_complete_avg - rep_missing_avg) ** 2, axis=1)
-    return cos_sim, mse
+    rep_complete_avg = torch.mean(rep_complete, dim=1)
+    rep_missing_avg = torch.mean(rep_missing, dim=1)
+    cos_sim = torch.nn.functional.cosine_similarity(rep_complete_avg, rep_missing_avg, dim=1)
+    mse = torch.mean((rep_complete_avg - rep_missing_avg) ** 2, dim=1)
+    euclidean_dist = torch.norm(rep_complete_avg - rep_missing_avg, dim=1)
+    return cos_sim.cpu().numpy(), mse.cpu().numpy(), euclidean_dist.cpu().numpy()
 
 
 if __name__ == '__main__':
@@ -200,24 +201,7 @@ if __name__ == '__main__':
     # Preprocess the complete data
     complete_train_data_combined, complete_labels = utils.variable_time_collate_fn(
         train_data_original, device, classify=args.classif, data_min=data_min, data_max=data_max)
-    
-    # Save the original data to a text file
-    print("Saving original data to 'original_data.txt'...")
-    with open('original_data.txt', 'w') as f:
-        for idx, (record_id, tt, vals, mask, labels) in enumerate(train_data_original):
-            f.write(f'Record ID: {record_id}\n')
-            f.write(f'Time Steps: {tt.cpu().numpy()}\n')
-            f.write(f'Values:\n{vals.cpu().numpy()}\n')
-            f.write(f'Mask:\n{mask.cpu().numpy()}\n')
-            f.write(f'Labels: {labels.cpu().numpy()}\n')
-            f.write('\n')
 
-    # Save the preprocessed complete data
-    complete_data_array = complete_train_data_combined.cpu().numpy()
-    np.save('complete_data.npy', complete_data_array)
-    np.savetxt('complete_data.txt', complete_data_array.reshape(-1, complete_data_array.shape[-1]))
-
-    #END
     # Create TensorDataset and DataLoader for complete data
     complete_train_dataset = TensorDataset(complete_train_data_combined, complete_labels.long().squeeze())
     complete_train_dataloader = DataLoader(
@@ -240,36 +224,34 @@ if __name__ == '__main__':
         print(f"Processing missingness rate: {rate}")
         # Introduce missingness
         missing_train_data = utils.introduce_missingness(copy.deepcopy(train_data_original), rate)
-
-
-        # Save the missing data to a text file
-        print(f"Saving missing data with {int(rate*100)}% missingness to 'missing_data_{int(rate*100)}.txt'...")
-        with open(f'missing_data_{int(rate*100)}.txt', 'w') as f:
-            for idx, (record_id, tt, vals, mask, labels) in enumerate(missing_train_data):
-                f.write(f'Record ID: {record_id}\n')
-                f.write(f'Time Steps: {tt.cpu().numpy()}\n')
-                f.write(f'Values:\n{vals.cpu().numpy()}\n')
-                f.write(f'Mask:\n{mask.cpu().numpy()}\n')
-                f.write(f'Labels: {labels.cpu().numpy()}\n')
-                f.write('\n')
         # Create dataloader for missing data
         missing_train_data_combined, missing_labels = utils.variable_time_collate_fn(
             missing_train_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
-
-         # Save the combined missing data
-        missing_data_array = missing_train_data_combined.cpu().numpy()
-        np.save(f'missing_data_combined_{int(rate*100)}.npy', missing_data_array)
-        np.savetxt(f'missing_data_combined_{int(rate*100)}.txt', missing_data_array.reshape(-1, missing_data_array.shape[-1]))
-
-        #END
         missing_train_dataloader = DataLoader(
             TensorDataset(missing_train_data_combined, missing_labels.long().squeeze()),
             batch_size=args.batch_size, shuffle=False)
         # Extract representations from missing data
         rep_missing = extract_representations(rec, missing_train_dataloader, args, device)
+
+        # **Add comparison here**
+        representations_equal = torch.equal(rep_complete, rep_missing)
+        print(f"Are representations identical at missing rate {rate}? {representations_equal}")
+        # If not identical, compute differences
+        if not representations_equal:
+            representation_difference = rep_complete - rep_missing
+            max_difference = torch.max(torch.abs(representation_difference))
+            print(f"Max difference in representations at missing rate {rate}: {max_difference}")
+        
         # Compute similarities
-        cos_sim, mse = compute_similarity(rep_complete, rep_missing)
-        cos_sim_results[rate] = cos_sim
-        mse_results[rate] = mse
-        print(f"Cosine Similarity at missing rate {rate}: {np.mean(cos_sim):.4f}")
-        print(f"MSE at missing rate {rate}: {np.mean(mse):.4f}")
+        cos_sim, mse, euclidean_dist = compute_similarity(rep_complete, rep_missing)
+        print(f"Cosine Similarity at missing rate {rate}: Mean={np.mean(cos_sim):.8f}, Std={np.std(cos_sim):.8f}")
+        print(f"MSE at missing rate {rate}: Mean={np.mean(mse):.8f}, Std={np.std(mse):.8f}")
+        print(f"Euclidean Distance at missing rate {rate}: Mean={np.mean(euclidean_dist):.8f}, Std={np.std(euclidean_dist):.8f}")
+        #plt.hist(cos_sim, bins=50)
+        #plt.title(f'Cosine Similarity Distribution at Missing Rate {rate}')
+        #plt.xlabel('Cosine Similarity')
+        #plt.ylabel('Frequency')
+        #plt.show()
+
+
+

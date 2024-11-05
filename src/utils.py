@@ -43,7 +43,9 @@ def fill_missing_values_with_mean(dataset, device):
 
 def introduce_missingness(dataset, missing_rate):
     new_dataset = []
-    for (record_id, tt, vals, mask, labels) in dataset:
+    total_values_being_zeroed = []
+    total_indices_being_zeroed = []
+    for idx, (record_id, tt, vals, mask, labels) in enumerate(dataset):
         vals = vals.clone()
         mask = mask.clone()
         total_values = mask.sum().item()
@@ -52,13 +54,22 @@ def introduce_missingness(dataset, missing_rate):
         present_indices = torch.nonzero(mask, as_tuple=False)
         # Randomly select indices to set as missing
         missing_indices = present_indices[torch.randperm(len(present_indices))[:num_missing]]
-        # Set missing values to NaN
-        vals[missing_indices[:, 0], missing_indices[:, 1]] = float('nan')
+        # Store the values before setting to zero
+        values_being_zeroed = vals[missing_indices[:, 0], missing_indices[:, 1]]
+        total_values_being_zeroed.extend(values_being_zeroed.cpu().numpy())
+        total_indices_being_zeroed.extend(missing_indices.cpu().numpy())
+        # Set missing values to zero
+        vals[missing_indices[:, 0], missing_indices[:, 1]] = 0.0
         mask[missing_indices[:, 0], missing_indices[:, 1]] = 0
         new_dataset.append((record_id, tt, vals, mask, labels))
     print(f"Introduced missingness: {missing_rate*100}% missing values.")
-    print(f"Total values: {total_values}, Num missing to introduce: {num_missing}")
-    print(f"Mask sum after introducing missingness: {mask.sum().item()}")
+    total_values_being_zeroed = np.array(total_values_being_zeroed)
+    total_indices_being_zeroed = np.array(total_indices_being_zeroed)
+    print(f"Number of values being set to zero: {len(total_values_being_zeroed)}")
+    print("Sample of values being set to zero:")
+    print(total_values_being_zeroed[:10])
+    print("Corresponding indices:")
+    print(total_indices_being_zeroed[:10])
     return new_dataset
 
 
@@ -256,88 +267,68 @@ def get_mimiciii_data(args):
 
 
 def get_physionet_data(args, device, q, flag=1):
+    # Load only Set A (training data)
     train_dataset_obj = PhysioNet('data/physionet', train=True,
                                   quantization=q,
                                   download=True, n_samples=min(10000, args.n),
                                   device=device)
 
-    if args.classif:
-        total_dataset = train_dataset_obj[:len(train_dataset_obj)]
-    else:
-        test_dataset_obj = PhysioNet('data/physionet', train=False,
-                                     quantization=q,
-                                     download=True, n_samples=min(10000, args.n),
-                                     device=device)
-        total_dataset = train_dataset_obj[:len(train_dataset_obj)] + test_dataset_obj[:len(test_dataset_obj)]
+    # Use only patients with outcome labels from Outcomes-a.txt
+    total_dataset = []
+    for data_point in train_dataset_obj:
+        record_id, tt, vals, mask, labels = data_point
+        if labels is not None:
+            total_dataset.append(data_point)
 
-    print(f"Total dataset size: {len(total_dataset)}")
-
-    # Fill missing values with mean to create a complete dataset
-    filled_dataset = fill_missing_values_with_mean(total_dataset, device)
-    total_dataset = filled_dataset
-
-    # **Compute data_min and data_max**
-    data_min, data_max = get_data_min_max(total_dataset, device)
+    print(f"Total dataset size with labels: {len(total_dataset)}")
 
     # Proceed to split the dataset
-    if args.classif:
-        total_dataset = [d for d in total_dataset if d[-1] is not None]
-        train_data, test_data = model_selection.train_test_split(
-            total_dataset, train_size=0.8, random_state=42, shuffle=True)
-        train_data, val_data = model_selection.train_test_split(
-            train_data, train_size=0.8, random_state=11, shuffle=True)
-    else:
-        train_data, test_data = model_selection.train_test_split(
-            total_dataset, train_size=0.8, random_state=42, shuffle=True)
-        val_data = None
+    train_data, test_data = model_selection.train_test_split(
+        total_dataset, train_size=0.8, random_state=42, shuffle=True)
+    train_data, val_data = model_selection.train_test_split(
+        train_data, train_size=0.8, random_state=11, shuffle=True)
 
     # Prepare data loaders
     batch_size = min(len(train_data), args.batch_size)
-    input_dim = filled_dataset[0][2].shape[1]
+    input_dim = total_dataset[0][2].shape[1]
 
-    # **Pass data_min and data_max to variable_time_collate_fn**
+    # Compute data_min and data_max from the dataset
+    data_min, data_max = get_data_min_max(total_dataset, device)
+
+    # Pass data_min and data_max to variable_time_collate_fn
     train_data_combined, train_labels = variable_time_collate_fn(
         train_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
+    val_data_combined, val_labels = variable_time_collate_fn(
+        val_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
     test_data_combined, test_labels = variable_time_collate_fn(
         test_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
-    if args.classif:
-        val_data_combined, val_labels = variable_time_collate_fn(
-            val_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
 
     train_data_combined = TensorDataset(
         train_data_combined, train_labels.long().squeeze())
+    val_data_combined = TensorDataset(
+        val_data_combined, val_labels.long().squeeze())
     test_data_combined = TensorDataset(
         test_data_combined, test_labels.long().squeeze())
-    if args.classif:
-        val_data_combined = TensorDataset(
-            val_data_combined, val_labels.long().squeeze())
 
     train_dataloader = DataLoader(
         train_data_combined, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(
+        val_data_combined, batch_size=batch_size, shuffle=False)
     test_dataloader = DataLoader(
         test_data_combined, batch_size=batch_size, shuffle=False)
-    if args.classif:
-        val_dataloader = DataLoader(
-            val_data_combined, batch_size=batch_size, shuffle=False)
-    else:
-        val_dataloader = None
 
     data_objects = {
         "dataset_obj": total_dataset,
         "train_data": train_data,
+        "val_data": val_data,
         "test_data": test_data,
         "train_dataloader": train_dataloader,
+        "val_dataloader": val_dataloader,
         "test_dataloader": test_dataloader,
         "input_dim": input_dim,
-        "val_dataloader": val_dataloader
     }
-    if args.classif:
-        data_objects["val_data"] = val_data
 
     return data_objects
-
-
-
 
 def variable_time_collate_fn(batch, device=torch.device("cpu"), classify=False, activity=False,
                              data_min=None, data_max=None):
@@ -349,9 +340,8 @@ def variable_time_collate_fn(batch, device=torch.device("cpu"), classify=False, 
       - mask is a (T, D) tensor containing 1 where values were observed and 0 otherwise.
       - labels is a list of labels for the current patient, if labels are available. Otherwise None.
     Returns:
-      combined_tt: The union of all time observations.
-      combined_vals: (M, T, D) tensor containing the observed values.
-      combined_mask: (M, T, D) tensor containing 1 where values were observed and 0 otherwise.
+      combined_data: (batch_size, max_seq_len, input_dim * 2 + 1) tensor containing the observed values, masks, and time steps.
+      combined_labels: Labels corresponding to each sample in the batch.
     """
     D = batch[0][2].shape[1]
     # number of labels
@@ -381,7 +371,7 @@ def variable_time_collate_fn(batch, device=torch.device("cpu"), classify=False, 
     if not activity:
         enc_combined_vals, _, _ = normalize_masked_data(enc_combined_vals, enc_combined_mask,
                                                         att_min=data_min, att_max=data_max)
-
+    # Replace NaNs with zeros if necessary
     enc_combined_vals = torch.nan_to_num(enc_combined_vals, nan=0.0)
 
     if torch.max(enc_combined_tt) != 0.:

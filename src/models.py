@@ -112,19 +112,29 @@ class enc_mtan_rnn(nn.Module):
    
     def forward(self, x, time_steps):
         time_steps = time_steps.cpu()
-        mask = x[:, :, self.dim:]
-        mask = torch.cat((mask, mask), 2)
+        # Separate observed data and mask
+        observed_data = x[:, :, :self.dim]
+        observed_mask = x[:, :, self.dim:]
+        # Apply the mask to the observed data
+        observed_data = observed_data * observed_mask
+        # Reconstruct x with masked data if required
+        x_masked = torch.cat((observed_data, observed_mask), dim=2)
+        # Duplicate the mask if necessary
+        mask = torch.cat((observed_mask, observed_mask), dim=2)
+        # Proceed as before
         if self.learn_emb:
             key = self.learn_time_embedding(time_steps).to(self.device)
             query = self.learn_time_embedding(self.query.unsqueeze(0)).to(self.device)
         else:
             key = self.fixed_time_embedding(time_steps).to(self.device)
             query = self.fixed_time_embedding(self.query.unsqueeze(0)).to(self.device)
-        out = self.att(query, key, x, mask)
+        # Use masked data in attention
+        out = self.att(query, key, x_masked, mask)
         out, _ = self.gru_rnn(out)
         z0 = self.hiddens_to_z0(out)
         qz0_mean, qz0_logvar = z0[:, :, :self.latent_dim], z0[:, :, self.latent_dim:]
-        return qz0_mean, qz0_logvar, out  # Return hidden representations
+        return qz0_mean, qz0_logvar, out
+
     
     
 class dec_mtan_rnn(nn.Module):
