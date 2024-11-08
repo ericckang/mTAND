@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+import random
 
 import numpy as np
 from physionet import PhysioNet, get_data_min_max, variable_time_collate_fn2
@@ -41,28 +42,43 @@ def fill_missing_values_with_mean(dataset, device):
     return filled_dataset
 
 
-def introduce_missingness(dataset, missing_rate):
+def introduce_missingness_chunks(dataset, missing_rate):
     new_dataset = []
     total_values_being_zeroed = []
     total_indices_being_zeroed = []
     for idx, (record_id, tt, vals, mask, labels) in enumerate(dataset):
         vals = vals.clone()
         mask = mask.clone()
-        total_values = mask.sum().item()
-        num_missing = int(total_values * missing_rate)
-        # Get indices where data is present
-        present_indices = torch.nonzero(mask, as_tuple=False)
-        # Randomly select indices to set as missing
-        missing_indices = present_indices[torch.randperm(len(present_indices))[:num_missing]]
-        # Store the values before setting to zero
-        values_being_zeroed = vals[missing_indices[:, 0], missing_indices[:, 1]]
-        total_values_being_zeroed.extend(values_being_zeroed.cpu().numpy())
-        total_indices_being_zeroed.extend(missing_indices.cpu().numpy())
-        # Set missing values to zero
-        vals[missing_indices[:, 0], missing_indices[:, 1]] = 0.0
-        mask[missing_indices[:, 0], missing_indices[:, 1]] = 0
+        total_time_steps = len(tt)
+        num_variables = vals.shape[1]
+        # Number of observed values
+        total_values = int(mask.sum().item())
+        # Calculate the number of time steps to remove
+        num_missing_time_steps = int(total_time_steps * missing_rate)
+        if num_missing_time_steps < 1:
+            num_missing_time_steps = 1
+        if num_missing_time_steps >= total_time_steps:
+            num_missing_time_steps = total_time_steps - 1
+
+        # Randomly select the start index for the missing chunk
+        start_idx = random.randint(0, total_time_steps - num_missing_time_steps)
+        end_idx = start_idx + num_missing_time_steps
+
+        # Set mask and values to zero for the missing time steps
+        vals[start_idx:end_idx, :] = 0.0
+        mask[start_idx:end_idx, :] = 0
+
+        # Store information about the missing values
+        missing_vals = vals[start_idx:end_idx, :][mask[start_idx:end_idx, :] == 0]
+        total_values_being_zeroed.extend(missing_vals.cpu().numpy())
+        indices_being_zeroed = torch.nonzero(mask[start_idx:end_idx, :] == 0, as_tuple=False)
+        indices_being_zeroed[:, 0] += start_idx  # Adjust indices
+        total_indices_being_zeroed.extend(indices_being_zeroed.cpu().numpy())
+
         new_dataset.append((record_id, tt, vals, mask, labels))
-    print(f"Introduced missingness: {missing_rate*100}% missing values.")
+
+    # After processing all records, print the information
+    print(f"Introduced missingness: {missing_rate*100}% missing time steps.")
     total_values_being_zeroed = np.array(total_values_being_zeroed)
     total_indices_being_zeroed = np.array(total_indices_being_zeroed)
     print(f"Number of values being set to zero: {len(total_values_being_zeroed)}")
@@ -70,7 +86,9 @@ def introduce_missingness(dataset, missing_rate):
     print(total_values_being_zeroed[:10])
     print("Corresponding indices:")
     print(total_indices_being_zeroed[:10])
+
     return new_dataset
+
 
 
 def count_parameters(model):

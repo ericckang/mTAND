@@ -223,7 +223,7 @@ if __name__ == '__main__':
     for rate in missing_rates:
         print(f"Processing missingness rate: {rate}")
         # Introduce missingness
-        missing_train_data = utils.introduce_missingness(copy.deepcopy(train_data_original), rate)
+        missing_train_data = utils.introduce_missingness_chunks(copy.deepcopy(train_data_original), rate)
         # Create dataloader for missing data
         missing_train_data_combined, missing_labels = utils.variable_time_collate_fn(
             missing_train_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
