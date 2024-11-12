@@ -41,6 +41,19 @@ def fill_missing_values_with_mean(dataset, device):
         filled_dataset.append((record_id, tt, vals, mask, labels))
     return filled_dataset
 
+def introduce_missingness_random(dataset, missing_rate):
+    new_dataset = []
+    for record_id, tt, vals, mask, labels in dataset:
+        vals = vals.clone()
+        mask = mask.clone()
+        total_values = mask.sum().item()
+        num_missing = int(total_values * missing_rate)
+        present_indices = torch.nonzero(mask, as_tuple=False)
+        missing_indices = present_indices[torch.randperm(len(present_indices))[:num_missing]]
+        vals[missing_indices[:, 0], missing_indices[:, 1]] = 0.0
+        mask[missing_indices[:, 0], missing_indices[:, 1]] = 0
+        new_dataset.append((record_id, tt, vals, mask, labels))
+    return new_dataset
 
 def introduce_missingness_chunks(dataset, missing_rate):
     new_dataset = []
@@ -89,6 +102,31 @@ def introduce_missingness_chunks(dataset, missing_rate):
 
     return new_dataset
 
+def introduce_missingness_mixed(dataset, missing_rate):
+    new_dataset = []
+    for record_id, tt, vals, mask, labels in dataset:
+        vals = vals.clone()
+        mask = mask.clone()
+        # Apply chunk missingness to half of the missing_rate
+        chunk_missing_rate = missing_rate / 2
+        total_time_steps = len(tt)
+        num_missing_time_steps = int(total_time_steps * chunk_missing_rate)
+        num_missing_time_steps = max(1, min(num_missing_time_steps, total_time_steps - 1))
+        start_idx = random.randint(0, total_time_steps - num_missing_time_steps)
+        end_idx = start_idx + num_missing_time_steps
+        vals[start_idx:end_idx, :] = 0.0
+        mask[start_idx:end_idx, :] = 0
+        # Apply random missingness to the remaining half
+        random_missing_rate = missing_rate / 2
+        total_values = mask.sum().item()
+        num_missing = int(total_values * random_missing_rate)
+        present_indices = torch.nonzero(mask, as_tuple=False)
+        if len(present_indices) > num_missing:
+            missing_indices = present_indices[torch.randperm(len(present_indices))[:num_missing]]
+            vals[missing_indices[:, 0], missing_indices[:, 1]] = 0.0
+            mask[missing_indices[:, 0], missing_indices[:, 1]] = 0
+        new_dataset.append((record_id, tt, vals, mask, labels))
+    return new_dataset
 
 
 def count_parameters(model):

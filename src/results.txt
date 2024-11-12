@@ -1,0 +1,36 @@
+Processing scenario: Random Missingness
+  Missingness rate: 0.1
+    Cosine Similarity: Mean = 0.99957466, Std = 0.00064600    MSE: Mean = 0.00058454, Std = 0.00092711    Euclidean Distance: Mean = 0.37140790, Std = 0.40167096  Missingness rate: 0.2
+    Cosine Similarity: Mean = 0.99906653, Std = 0.00098406    MSE: Mean = 0.00133262, Std = 0.00149200    Euclidean Distance: Mean = 0.67779607, Std = 0.47211429  Missingness rate: 0.3
+    Cosine Similarity: Mean = 0.99832678, Std = 0.00150667    MSE: Mean = 0.00251212, Std = 0.00241842    Euclidean Distance: Mean = 1.00185263, Std = 0.53150362  Missingness rate: 0.4
+    Cosine Similarity: Mean = 0.99734831, Std = 0.00209164    MSE: Mean = 0.00416788, Std = 0.00350838    Euclidean Distance: Mean = 1.34010398, Std = 0.58144432  Missingness rate: 0.5
+    Cosine Similarity: Mean = 0.99593198, Std = 0.00287501    MSE: Mean = 0.00670073, Std = 0.00510139    Euclidean Distance: Mean = 1.72990453, Std = 0.66196978Processing scenario: Chunk Missingness
+  Missingness rate: 0.1
+    Cosine Similarity: Mean = 0.99973315, Std = 0.00173050    MSE: Mean = 0.00041142, Std = 0.00277726    Euclidean Distance: Mean = 0.13305765, Std = 0.43925488  Missingness rate: 0.2
+    Cosine Similarity: Mean = 0.99965799, Std = 0.00143380    MSE: Mean = 0.00051079, Std = 0.00232444    Euclidean Distance: Mean = 0.20176789, Std = 0.46990895  Missingness rate: 0.3
+    Cosine Similarity: Mean = 0.99949646, Std = 0.00201221    MSE: Mean = 0.00076010, Std = 0.00336111    Euclidean Distance: Mean = 0.29001513, Std = 0.55232233  Missingness rate: 0.4
+    Cosine Similarity: Mean = 0.99925119, Std = 0.00223015    MSE: Mean = 0.00112089, Std = 0.00365266    Euclidean Distance: Mean = 0.41843262, Std = 0.63151199  Missingness rate: 0.5
+    Cosine Similarity: Mean = 0.99882537, Std = 0.00260760    MSE: Mean = 0.00181539, Std = 0.00439232    Euclidean Distance: Mean = 0.59281671, Std = 0.76029444Processing scenario: Mixed Missingness
+  Missingness rate: 0.1
+    Cosine Similarity: Mean = 0.99954832, Std = 0.00349117    MSE: Mean = 0.00063409, Std = 0.00468249    Euclidean Distance: Mean = 0.26401111, Std = 0.50492883  Missingness rate: 0.2
+    Cosine Similarity: Mean = 0.99922866, Std = 0.00377514    MSE: Mean = 0.00109728, Std = 0.00521930    Euclidean Distance: Mean = 0.47561735, Std = 0.57930434  Missingness rate: 0.3
+    Cosine Similarity: Mean = 0.99882525, Std = 0.00376020    MSE: Mean = 0.00172242, Std = 0.00526150    Euclidean Distance: Mean = 0.69449234, Std = 0.63210791  Missingness rate: 0.4
+    Cosine Similarity: Mean = 0.99837190, Std = 0.00401548    MSE: Mean = 0.00243756, Std = 0.00581471    Euclidean Distance: Mean = 0.89863998, Std = 0.66368389  Missingness rate: 0.5
+    Cosine Similarity: Mean = 0.99781770, Std = 0.00414076    MSE: Mean = 0.00333966, Std = 0.00604941    Euclidean Distance: Mean = 1.11311245, Std = 0.68621153
+Combined Results:
+ Missing Rate  Cosine Similarity Mean  Cosine Similarity Std  MSE Mean  MSE Std  Euclidean Distance Mean  Euclidean Distance Std           Scenario
+          0.1                0.999575               0.000646  0.000585 0.000927                 0.371408                0.401671 Random Missingness
+          0.2                0.999067               0.000984  0.001333 0.001492                 0.677796                0.472114 Random Missingness
+          0.3                0.998327               0.001507  0.002512 0.002418                 1.001853                0.531504 Random Missingness
+          0.4                0.997348               0.002092  0.004168 0.003508                 1.340104                0.581444 Random Missingness
+          0.5                0.995932               0.002875  0.006701 0.005101                 1.729905                0.661970 Random Missingness
+          0.1                0.999733               0.001730  0.000411 0.002777                 0.133058                0.439255  Chunk Missingness
+          0.2                0.999658               0.001434  0.000511 0.002324                 0.201768                0.469909  Chunk Missingness
+          0.3                0.999496               0.002012  0.000760 0.003361                 0.290015                0.552322  Chunk Missingness
+          0.4                0.999251               0.002230  0.001121 0.003653                 0.418433                0.631512  Chunk Missingness
+          0.5                0.998825               0.002608  0.001815 0.004392                 0.592817                0.760294  Chunk Missingness
+          0.1                0.999548               0.003491  0.000634 0.004682                 0.264011                0.504929  Mixed Missingness
+          0.2                0.999229               0.003775  0.001097 0.005219                 0.475617                0.579304  Mixed Missingness
+          0.3                0.998825               0.003760  0.001722 0.005261                 0.694492                0.632108  Mixed Missingness
+          0.4                0.998372               0.004015  0.002438 0.005815                 0.898640                0.663684  Mixed Missingness
+          0.5                0.997818               0.004141  0.003340 0.006049                 1.113112                0.686212  Mixed Missingness

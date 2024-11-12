@@ -15,6 +15,8 @@ import utils
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
+import pandas as pd
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--niters', type=int, default=2000)
@@ -217,41 +219,93 @@ if __name__ == '__main__':
     rep_complete = extract_representations(rec, complete_train_dataloader, args, device)
 
     # Introduce missingness and compute similarities
+    missingness_scenarios = {
+    'Random Missingness': utils.introduce_missingness_random,
+    'Chunk Missingness': utils.introduce_missingness_chunks,
+    'Mixed Missingness': utils.introduce_missingness_mixed
+    }
+
     missing_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-    cos_sim_results = {}
-    mse_results = {}
-    for rate in missing_rates:
-        print(f"Processing missingness rate: {rate}")
-        # Introduce missingness
-        missing_train_data = utils.introduce_missingness_chunks(copy.deepcopy(train_data_original), rate)
-        # Create dataloader for missing data
-        missing_train_data_combined, missing_labels = utils.variable_time_collate_fn(
-            missing_train_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
-        missing_train_dataloader = DataLoader(
-            TensorDataset(missing_train_data_combined, missing_labels.long().squeeze()),
-            batch_size=args.batch_size, shuffle=False)
-        # Extract representations from missing data
-        rep_missing = extract_representations(rec, missing_train_dataloader, args, device)
+    results = {}
+    output_filename = 'results.txt'
+    with open(output_filename, 'w') as f:
+        for scenario_name, missingness_function in missingness_scenarios.items():
+            print(f"Processing scenario: {scenario_name}")
+            f.write(f"Processing scenario: {scenario_name}\n")
+            results[scenario_name] = []
+            for rate in missing_rates:
+                print(f"  Missingness rate: {rate}")
+                f.write(f"  Missingness rate: {rate}\n")
+                # Introduce missingness using the appropriate function
+                missing_train_data = missingness_function(copy.deepcopy(train_data_original), rate)
+                # Create dataloader for missing data
+                missing_train_data_combined, missing_labels = utils.variable_time_collate_fn(
+                    missing_train_data, device, classify=args.classif, data_min=data_min, data_max=data_max)
+                missing_train_dataloader = DataLoader(
+                    TensorDataset(missing_train_data_combined, missing_labels.long().squeeze()),
+                    batch_size=args.batch_size, shuffle=False)
+                # Extract representations from missing data
+                rep_missing = extract_representations(rec, missing_train_dataloader, args, device)
+                # Compute similarities
+                cos_sim, mse, euclidean_dist = compute_similarity(rep_complete, rep_missing)
+                # Store results
+                results[scenario_name].append({
+                    'Missing Rate': rate,
+                    'Cosine Similarity Mean': np.mean(cos_sim),
+                    'Cosine Similarity Std': np.std(cos_sim),
+                    'MSE Mean': np.mean(mse),
+                    'MSE Std': np.std(mse),
+                    'Euclidean Distance Mean': np.mean(euclidean_dist),
+                    'Euclidean Distance Std': np.std(euclidean_dist),
+                    'Scenario': scenario_name
+                })
+                print(f"    Cosine Similarity: Mean = {np.mean(cos_sim):.8f}, Std = {np.std(cos_sim):.8f}")
+                print(f"    MSE: Mean = {np.mean(mse):.8f}, Std = {np.std(mse):.8f}")
+                print(f"    Euclidean Distance: Mean = {np.mean(euclidean_dist):.8f}, Std = {np.std(euclidean_dist):.8f}")
+                f.write(f"    Cosine Similarity: Mean = {np.mean(cos_sim):.8f}, Std = {np.std(cos_sim):.8f}")
+                f.write(f"    MSE: Mean = {np.mean(mse):.8f}, Std = {np.std(mse):.8f}")
+                f.write(f"    Euclidean Distance: Mean = {np.mean(euclidean_dist):.8f}, Std = {np.std(euclidean_dist):.8f}")
+        all_results = []
+        for scenario_name in results:
+            scenario_results = results[scenario_name]
+            all_results.extend(scenario_results)
+        # Create a DataFrame from all results
+        df_all = pd.DataFrame(all_results)
 
-        # **Add comparison here**
-        representations_equal = torch.equal(rep_complete, rep_missing)
-        print(f"Are representations identical at missing rate {rate}? {representations_equal}")
-        # If not identical, compute differences
-        if not representations_equal:
-            representation_difference = rep_complete - rep_missing
-            max_difference = torch.max(torch.abs(representation_difference))
-            print(f"Max difference in representations at missing rate {rate}: {max_difference}")
-        
-        # Compute similarities
-        cos_sim, mse, euclidean_dist = compute_similarity(rep_complete, rep_missing)
-        print(f"Cosine Similarity at missing rate {rate}: Mean={np.mean(cos_sim):.8f}, Std={np.std(cos_sim):.8f}")
-        print(f"MSE at missing rate {rate}: Mean={np.mean(mse):.8f}, Std={np.std(mse):.8f}")
-        print(f"Euclidean Distance at missing rate {rate}: Mean={np.mean(euclidean_dist):.8f}, Std={np.std(euclidean_dist):.8f}")
-        #plt.hist(cos_sim, bins=50)
-        #plt.title(f'Cosine Similarity Distribution at Missing Rate {rate}')
-        #plt.xlabel('Cosine Similarity')
-        #plt.ylabel('Frequency')
-        #plt.show()
+        # Write the combined results to the text file
+        f.write("\nCombined Results:\n")
+        f.write(df_all.to_string(index=False))
+        f.write('\n')
 
+    colors = {'Random Missingness': 'blue', 'Chunk Missingness': 'green', 'Mixed Missingness': 'red'}
+    markers = {'Random Missingness': 'o', 'Chunk Missingness': 's', 'Mixed Missingness': '^'}
+    linestyles = {'Random Missingness': '-', 'Chunk Missingness': '--', 'Mixed Missingness': '-.'}
 
+    metrics = ['Cosine Similarity Mean', 'MSE Mean', 'Euclidean Distance Mean']
+    y_labels = ['Cosine Similarity', 'MSE', 'Euclidean Distance']
 
+    for metric, y_label in zip(metrics, y_labels):
+        plt.figure(figsize=(10, 6))
+        for scenario_name in results:
+            df_scenario = df_all[df_all['Scenario'] == scenario_name]
+            plt.plot(df_scenario['Missing Rate'], df_scenario[metric],
+                     label=scenario_name,
+                     color=colors[scenario_name],
+                     marker=markers[scenario_name],
+                     linestyle=linestyles[scenario_name])
+        plt.title(f'{y_label} vs Missing Rate for Different Missingness Models')
+        plt.xlabel('Missing Rate')
+        plt.ylabel(y_label)
+        plt.legend(title='Missingness Scenario')
+        plt.grid(True)
+        # Adjust y-axis limits if necessary
+        if metric == 'Cosine Similarity Mean':
+            plt.ylim(0.995, 1.0)
+        elif metric == 'MSE Mean':
+            plt.ylim(0, df_all[metric].max() * 1.1)
+        elif metric == 'Euclidean Distance Mean':
+            plt.ylim(0, df_all[metric].max() * 1.1)
+        plt.tight_layout()
+        # Save the figure as an image file
+        plt.savefig(f'{metric.replace(" ", "_")}_comparison.png')
+        plt.show()
